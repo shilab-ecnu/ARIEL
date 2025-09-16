@@ -22,6 +22,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+<<<<<<< Updated upstream
+=======
+# dataset
+data/
+
+>>>>>>> Stashed changes
 # C extensions
 *.so
 

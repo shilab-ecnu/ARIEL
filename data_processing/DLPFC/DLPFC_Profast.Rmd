@@ -1,0 +1,144 @@
+---
+title: '7374'
+author: "yws"
+date: "2025-06-08"
+output: html_document
+---
+```{r}
+library(Seurat)
+library(SpatialExperiment)
+library(spatialLIBD)
+
+library(parallel)
+library(ProFAST) # load the package of FAST method
+library(PRECAST)
+library(SeuratDisk)
+library(Matrix)
+library(stringr)
+library(irlba)
+setwd('./data/DLPFC')
+```
+
+读取数据并得到embedding
+```{r}
+start_time <- proc.time()
+sample = read.csv("sampleid3.csv")[1:2,]
+for (i in sample){
+  spatial = read.csv(paste0('profast_spatial_',i,'.csv'),header = FALSE)
+  data = read.csv(paste0('profast_gene_',i,'.csv'),row.names = 1)
+  data = as.matrix(data)
+  data = as(data, "sparseMatrix")
+  data = CreateSeuratObject(counts = t(data))
+  data@meta.data[["row"]] = spatial[,1]
+  data@meta.data[["col"]] = spatial[,2]
+  data = SCTransform(data, assay = "RNA",  verbose = FALSE) 
+  assign(paste0("data_",i), data)
+}
+```
+
+
+```{r}
+data=list()
+for(i in sample){
+  data = append(data, get(paste0("data_",i)))
+}
+```
+
+```{r}
+## Get the gene-by-spot read count matrices
+countList1 <- lapply(data, function(x) x[["SCT"]]@counts)
+
+## Check the spatial coordinates: Yes, they are named as "row" and "col"!
+head(data[[1]]@meta.data)
+
+## Get the meta data of each spot for each data batch
+metadataList1 <- lapply(data, function(x) x@meta.data)
+
+
+## ensure the row.names of metadata in metaList are the same as that of colnames count matrix in countList
+M1 <- length(countList1)
+for(r in 1:M1){
+  row.names(metadataList1[[r]]) <- colnames(countList1[[r]])
+}
+
+
+## Create the Seurat list  object
+
+seuList1 <- list()
+for(r in 1:M1){
+  seuList1[[r]] <- CreateSeuratObject(counts = countList1[[r]], meta.data=metadataList1[[r]], project = "FASTdata")
+}
+```
+
+
+
+```{r}
+
+## Create PRECASTObject
+custom_genelist1 <- row.names(seuList1[[1]])
+set.seed(2023)
+PRECASTObj1 <-  CreatePRECASTObject(seuList1, customGenelist=custom_genelist1,premin.spots =0,premin.features=0,postmin.spots=0,postmin.features=0)
+
+## User can retain the raw seuList by the following commond.
+##  PRECASTObj <-  CreatePRECASTObject(seuList, customGenelist=row.names(seuList[[1]]), rawData.preserve = TRUE)
+## check the number of genes/features after filtering step
+PRECASTObj1@seulist
+```
+
+```{r}
+## seuList is null since the default value `rawData.preserve` is FALSE.
+PRECASTObj1@seuList
+
+## Add adjacency matrix list for a PRECASTObj object to prepare for FAST model fitting.
+PRECASTObj1 <- AddAdjList(PRECASTObj1, platform = "ST")
+
+## Add a model setting in advance for a PRECASTObj object: verbose =TRUE helps outputing the information in the algorithm; 
+PRECASTObj1 <- AddParSettingFAST(PRECASTObj1, verbose=TRUE)
+## Check the parameters
+PRECASTObj1@parameterList
+```
+
+```{r}
+q = 256
+fit.model = "gaussian"
+para_names <- c("maxIter", "epsLogLik", "verbose", "error_heter", "Psi_diag", "seed")
+fit.model <- match.arg(fit.model,'gaussian')
+verbose <- PRECASTObj1@parameterList$verbose
+message("******", "Run the Gaussian version of FAST...")
+
+get_data <- function(seu_obj, assay = NULL, fit.model = "gaussian") {
+  if (is.null(assay)) 
+    assay <- DefaultAssay(seu_obj)
+  
+  if (fit.model == "poisson") {
+    dat <- GetAssayData(seu_obj, assay = assay, layer = "counts")
+  } else if (fit.model == "gaussian") {
+    dat <- GetAssayData(seu_obj, assay = assay, layer = "data")
+  } else {
+    stop("FAST: Check the argument: fit.model! It is not supported for this fit.model!")
+  }
+  
+  return(Matrix::t(as.matrix(dat)))  # 转置并确保是矩阵格式
+}
+XList1 <- lapply(PRECASTObj1@seulist, get_data, fit.model = fit.model)#报错
+
+PRECASTObj1@resList$FAST <- FAST_structure(XList1, q = 256, fit.model = fit.model, AdjList = PRECASTObj1@AdjList, parameterList = PRECASTObj1@parameterList)
+```
+
+
+```{r}
+j=1
+for(i in sample){
+  embedding = t(PRECASTObj1@resList[["FAST"]][["hV"]][[j]])
+  write.csv(embedding,paste0('embedding_',i,'.csv'),row.names=F)
+  j=j+1
+}
+```
+
+
+```{r}
+end_time <- proc.time()
+run_time <- end_time - start_time
+
+print(run_time)
+```

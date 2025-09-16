@@ -1,0 +1,283 @@
+---
+title: "cosmix_plus_plus"
+author: "yws"
+date: "2024-03-18"
+output: html_document
+---
+
+
+```{r}
+library(parallel)
+library(ProFAST) # load the package of FAST method
+library(PRECAST)
+library(Seurat)
+library(SeuratDisk)
+library(Matrix)
+library(stringr)
+library(irlba)
+```
+
+```{r}
+#ll=read.csv('E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/30x30gene.csv')
+#ll_spatial=read.csv('E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/30x30spatial.csv',header = FALSE)
+
+ll=read.csv('E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/lm_library_gene.csv')
+ll_spatial=read.csv('E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/lm_library_spatial.csv',header = FALSE)
+
+fat2=read.csv('E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/fat2.csv',row.names=1)
+health1=read.csv('E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/health1.csv',row.names=1)
+
+fat2_spatial=read.csv('E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/fat2_spatial.csv',header = FALSE)
+health1_spatial=read.csv('E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/health1_spatial.csv',header = FALSE)
+```
+
+
+```{r}
+ll=as.matrix(ll)
+fat2=as.matrix(fat2)
+health1=as.matrix(health1)
+
+ll=as(ll, "sparseMatrix")
+fat2=as(fat2,"sparseMatrix")
+health1=as(health1,"sparseMatrix")
+```
+
+```{r}
+rownames(ll)=as.character(1:dim(ll_spatial)[1])
+ll=CreateSeuratObject(counts=t(ll))
+
+fat2=CreateSeuratObject(counts=t(fat2))
+health1=CreateSeuratObject(counts=t(health1))
+```
+
+
+```{r}
+ll@meta.data[["row"]]=ll_spatial[,1]
+ll@meta.data[["col"]]=ll_spatial[,2]
+
+fat2@meta.data[["row"]]=fat2_spatial[,1]
+fat2@meta.data[["col"]]=fat2_spatial[,2]
+
+health1@meta.data[["row"]]=health1_spatial[,1]
+health1@meta.data[["col"]]=health1_spatial[,2]
+
+```
+
+```{r}
+ll=SCTransform(ll, assay = "RNA",  verbose = FALSE) 
+fat2=SCTransform(fat2, assay = "RNA",  verbose = FALSE)
+health1=SCTransform(health1, assay = "RNA",  verbose = FALSE) 
+```
+
+
+# fat2
+```{r}
+data= list(ll,fat2)
+data
+
+```
+
+```{r}
+## Get the gene-by-spot read count matrices
+countList1 <- lapply(data, function(x) x[["SCT"]]@counts)
+
+## Check the spatial coordinates: Yes, they are named as "row" and "col"!
+head(data[[1]]@meta.data)
+
+## Get the meta data of each spot for each data batch
+metadataList1 <- lapply(data, function(x) x@meta.data)
+
+
+## ensure the row.names of metadata in metaList are the same as that of colnames count matrix in countList
+M1 <- length(countList1)
+for(r in 1:M1){
+  row.names(metadataList1[[r]]) <- colnames(countList1[[r]])
+}
+
+
+## Create the Seurat list  object
+
+seuList1 <- list()
+for(r in 1:M1){
+  seuList1[[r]] <- CreateSeuratObject(counts = countList1[[r]], meta.data=metadataList1[[r]], project = "FASTdata")
+}
+```
+
+```{r}
+
+## Create PRECASTObject
+custom_genelist1 <- row.names(seuList1[[1]])
+set.seed(2023)
+PRECASTObj1 <-  CreatePRECASTObject(seuList1, customGenelist=custom_genelist1,premin.spots =0,premin.features=0,postmin.spots=0,postmin.features=0)
+
+## User can retain the raw seuList by the following commond.
+##  PRECASTObj <-  CreatePRECASTObject(seuList, customGenelist=row.names(seuList[[1]]), rawData.preserve = TRUE)
+## check the number of genes/features after filtering step
+PRECASTObj1@seulist
+```
+
+```{r}
+
+## seuList is null since the default value `rawData.preserve` is FALSE.
+PRECASTObj1@seuList
+
+## Add adjacency matrix list for a PRECASTObj object to prepare for FAST model fitting.
+PRECASTObj1 <- AddAdjList(PRECASTObj1, platform = "ST")
+
+## Add a model setting in advance for a PRECASTObj object: verbose =TRUE helps outputing the information in the algorithm; 
+PRECASTObj1 <- AddParSettingFAST(PRECASTObj1, verbose=TRUE)
+## Check the parameters
+PRECASTObj1@parameterList
+```
+
+```{r}
+q = 50
+fit.model = "gaussian"
+para_names <- c("maxIter", "epsLogLik", "verbose", "error_heter", "Psi_diag", "seed")
+fit.model <- match.arg(fit.model,'gaussian')
+verbose <- PRECASTObj1@parameterList$verbose
+message("******", "Run the Gaussian version of FAST...")
+
+get_data <- function(seu_obj, assay = NULL, fit.model = "gaussian") {
+  if (is.null(assay)) 
+    assay <- DefaultAssay(seu_obj)
+  
+  if (fit.model == "poisson") {
+    dat <- GetAssayData(seu_obj, assay = assay, layer = "counts")
+  } else if (fit.model == "gaussian") {
+    dat <- GetAssayData(seu_obj, assay = assay, layer = "data")
+  } else {
+    stop("FAST: Check the argument: fit.model! It is not supported for this fit.model!")
+  }
+  
+  return(Matrix::t(as.matrix(dat)))  # 转置并确保是矩阵格式
+}
+XList1 <- lapply(PRECASTObj1@seulist, get_data, fit.model = fit.model)#报错
+
+PRECASTObj1@resList$FAST <- FAST_structure(XList1, q = 50, fit.model = fit.model, AdjList = PRECASTObj1@AdjList, parameterList = PRECASTObj1@parameterList)
+```
+
+```{r}
+embedding1=t(PRECASTObj1@resList[["FAST"]][["hV"]][[1]])
+embedding2=t(PRECASTObj1@resList[["FAST"]][["hV"]][[2]])
+
+```
+
+```{r}
+spatial1=matrix(c(PRECASTObj1@seulist[[1]]@meta.data[["row"]],PRECASTObj1@seulist[[1]]@meta.data[["col"]]),ncol=2)
+spatial2=matrix(c(PRECASTObj1@seulist[[2]]@meta.data[["row"]],PRECASTObj1@seulist[[2]]@meta.data[["col"]]),ncol=2)
+
+```
+
+```{r}
+write.csv(embedding1,'E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/ll_fat2_ll.csv',row.names=F)
+write.csv(embedding2,'E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/ll_fat2_fat2.csv',row.names=F)
+
+```
+
+
+#health1
+```{r}
+data= list(ll,health1)
+data
+
+```
+
+```{r}
+## Get the gene-by-spot read count matrices
+countList1 <- lapply(data, function(x) x[["SCT"]]@counts)
+
+## Check the spatial coordinates: Yes, they are named as "row" and "col"!
+head(data[[1]]@meta.data)
+
+## Get the meta data of each spot for each data batch
+metadataList1 <- lapply(data, function(x) x@meta.data)
+
+
+## ensure the row.names of metadata in metaList are the same as that of colnames count matrix in countList
+M1 <- length(countList1)
+for(r in 1:M1){
+  row.names(metadataList1[[r]]) <- colnames(countList1[[r]])
+}
+
+
+## Create the Seurat list  object
+
+seuList1 <- list()
+for(r in 1:M1){
+  seuList1[[r]] <- CreateSeuratObject(counts = countList1[[r]], meta.data=metadataList1[[r]], project = "FASTdata")
+}
+```
+
+```{r}
+
+## Create PRECASTObject
+custom_genelist1 <- row.names(seuList1[[1]])
+set.seed(2023)
+PRECASTObj1 <-  CreatePRECASTObject(seuList1, customGenelist=custom_genelist1,premin.spots =0,premin.features=0,postmin.spots=0,postmin.features=0)
+
+## User can retain the raw seuList by the following commond.
+##  PRECASTObj <-  CreatePRECASTObject(seuList, customGenelist=row.names(seuList[[1]]), rawData.preserve = TRUE)
+## check the number of genes/features after filtering step
+PRECASTObj1@seulist
+```
+
+```{r}
+
+## seuList is null since the default value `rawData.preserve` is FALSE.
+PRECASTObj1@seuList
+
+## Add adjacency matrix list for a PRECASTObj object to prepare for FAST model fitting.
+PRECASTObj1 <- AddAdjList(PRECASTObj1, platform = "ST")
+
+## Add a model setting in advance for a PRECASTObj object: verbose =TRUE helps outputing the information in the algorithm; 
+PRECASTObj1 <- AddParSettingFAST(PRECASTObj1, verbose=TRUE)
+## Check the parameters
+PRECASTObj1@parameterList
+```
+
+```{r}
+q = 50
+fit.model = "gaussian"
+para_names <- c("maxIter", "epsLogLik", "verbose", "error_heter", "Psi_diag", "seed")
+fit.model <- match.arg(fit.model,'gaussian')
+verbose <- PRECASTObj1@parameterList$verbose
+message("******", "Run the Gaussian version of FAST...")
+
+get_data <- function(seu_obj, assay = NULL, fit.model = "gaussian") {
+  if (is.null(assay)) 
+    assay <- DefaultAssay(seu_obj)
+  
+  if (fit.model == "poisson") {
+    dat <- GetAssayData(seu_obj, assay = assay, layer = "counts")
+  } else if (fit.model == "gaussian") {
+    dat <- GetAssayData(seu_obj, assay = assay, layer = "data")
+  } else {
+    stop("FAST: Check the argument: fit.model! It is not supported for this fit.model!")
+  }
+  
+  return(Matrix::t(as.matrix(dat)))  # 转置并确保是矩阵格式
+}
+XList1 <- lapply(PRECASTObj1@seulist, get_data, fit.model = fit.model)#报错
+
+PRECASTObj1@resList$FAST <- FAST_structure(XList1, q = 50, fit.model = fit.model, AdjList = PRECASTObj1@AdjList, parameterList = PRECASTObj1@parameterList)
+```
+
+```{r}
+embedding1=t(PRECASTObj1@resList[["FAST"]][["hV"]][[1]])
+embedding2=t(PRECASTObj1@resList[["FAST"]][["hV"]][[2]])
+
+```
+
+```{r}
+spatial1=matrix(c(PRECASTObj1@seulist[[1]]@meta.data[["row"]],PRECASTObj1@seulist[[1]]@meta.data[["col"]]),ncol=2)
+spatial2=matrix(c(PRECASTObj1@seulist[[2]]@meta.data[["row"]],PRECASTObj1@seulist[[2]]@meta.data[["col"]]),ncol=2)
+
+```
+
+```{r}
+write.csv(embedding1,'E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/ll_health1_ll.csv',row.names=F)
+write.csv(embedding2,'E:/庞大的学术帝国/图像对齐/data_cosmix/4x4part1/ll_health1_health1.csv',row.names=F)
+
+```
+

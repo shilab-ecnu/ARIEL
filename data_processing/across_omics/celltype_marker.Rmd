@@ -1,0 +1,36 @@
+---
+title: "脑区marker基因"
+author: "yws"
+date: "2024-12-08"
+output: html_document
+---
+```{r}
+library( "DESeq2" )
+setwd('./data')
+```
+
+```{r}
+cell_type=read.csv('cell_type.csv',header=F)
+```
+
+
+```{r}
+for (j in cell_type[,1]){
+  assign(paste0("RIBO_",j), t(read.csv(paste0("RIBO_",j,".csv"),header =TRUE,row.names=1)))
+  assign(paste0("RIBO_NOT_",j), t(read.csv(paste0("RIBO_NOT_",j,".csv"),header =TRUE,row.names=1)))
+  protein=cbind(get(paste0("RIBO_",j)),get(paste0("RIBO_NOT_",j)))
+  class=data.frame(condition=c(rep('control',dim(get(paste0("RIBO_NOT_",j)))[2]),rep('treat',dim(get(paste0("RIBO_",j)))[2])))
+  row.names(class)=colnames(protein)
+  dds <- DESeqDataSetFromMatrix(countData=protein+1, 
+                              colData=class, 
+                              design=~condition)
+  dds <- DESeq(dds)
+  res=results(dds)
+  res1 <- data.frame(res, stringsAsFactors = FALSE, check.names = FALSE)
+  assign(paste0("marker_",j),rownames(res1[order(res1$pvalue),])[1:10])
+  write.csv(get(paste0("marker_",j)),paste0("marker_",j,".csv"))
+  rm(list=setdiff(ls(), "cell_type"))
+  gc() 
+}
+```
+

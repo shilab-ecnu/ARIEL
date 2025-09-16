@@ -1,0 +1,174 @@
+---
+title: "across_omics_profast"
+author: "yws"
+date: "2024-05-16"
+output: html_document
+---
+
+```{r}
+library(parallel)
+library(ProFAST) # load the package of FAST method
+library(PRECAST)
+library(Seurat)
+library(SeuratDisk)
+library(Matrix)
+library(stringr)
+```
+
+```{r}
+setwd('./data/brain')
+```
+
+
+```{r}
+start_time <- proc.time()
+RIBOmap2_X=read.csv('RIBOmap2_X.csv',row.names=1)
+STARmap2_X=read.csv('STARmap2_X.csv',row.names=1)
+RIBOmap2_spatial=read.csv('RIBOmap2_spatial.csv',header = FALSE)
+STARmap2_spatial=read.csv('STARmap2_spatial.csv',header = FALSE)
+```
+
+```{r}
+RIBOmap2_X=as.matrix(RIBOmap2_X)
+STARmap2_X=as.matrix(STARmap2_X)
+RIBOmap2_X=as(RIBOmap2_X, "sparseMatrix")
+STARmap2_X=as(STARmap2_X,"sparseMatrix")
+```
+
+
+```{r}
+RIBOmap2=CreateSeuratObject(counts=t(RIBOmap2_X))
+STARmap2=CreateSeuratObject(counts=t(STARmap2_X))
+#RIBOmap1 <- CreateSeuratObject(RIBOmap1_X,min.cells=0,min.features=0)
+#STARmap2 <- CreateSeuratObject(STARmap2_X)
+```
+
+
+```{r}
+RIBOmap2@meta.data[["row"]]=RIBOmap2_spatial[,1]
+RIBOmap2@meta.data[["col"]]=RIBOmap2_spatial[,2]
+
+STARmap2@meta.data[["row"]]=STARmap2_spatial[,1]
+STARmap2@meta.data[["col"]]=STARmap2_spatial[,2]
+```
+
+```{r}
+RIBOmap2=SCTransform(RIBOmap2, assay = "RNA",  verbose = FALSE) 
+STARmap2=SCTransform(STARmap2, assay = "RNA",  verbose = FALSE)
+```
+
+```{r}
+data= list(RIBOmap2,STARmap2)
+data
+```
+
+
+```{r}
+## Get the gene-by-spot read count matrices
+countList1 <- lapply(data, function(x) x[["SCT"]]@counts)
+
+## Check the spatial coordinates: Yes, they are named as "row" and "col"!
+head(data[[1]]@meta.data)
+
+## Get the meta data of each spot for each data batch
+metadataList1 <- lapply(data, function(x) x@meta.data)
+
+
+## ensure the row.names of metadata in metaList are the same as that of colnames count matrix in countList
+M1 <- length(countList1)
+for(r in 1:M1){
+  row.names(metadataList1[[r]]) <- colnames(countList1[[r]])
+}
+
+
+## Create the Seurat list  object
+
+seuList1 <- list()
+for(r in 1:M1){
+  seuList1[[r]] <- CreateSeuratObject(counts = countList1[[r]], meta.data=metadataList1[[r]], project = "FASTdata")
+}
+
+```
+
+```{r}
+
+## Create PRECASTObject
+custom_genelist1 <- row.names(seuList1[[1]])
+set.seed(2023)
+PRECASTObj1 <-  CreatePRECASTObject(seuList1, customGenelist=custom_genelist1, premin.spots = 0,  
+                    premin.features=0, postmin.spots=0, postmin.features=0)
+
+## User can retain the raw seuList by the following commond.
+##  PRECASTObj <-  CreatePRECASTObject(seuList, customGenelist=row.names(seuList[[1]]), rawData.preserve = TRUE)
+## check the number of genes/features after filtering step
+PRECASTObj1@seulist
+
+```
+
+```{r}
+
+## seuList is null since the default value `rawData.preserve` is FALSE.
+PRECASTObj1@seuList
+
+## Add adjacency matrix list for a PRECASTObj object to prepare for FAST model fitting.
+PRECASTObj1 <- AddAdjList(PRECASTObj1, platform = "ST")
+
+## Add a model setting in advance for a PRECASTObj object: verbose =TRUE helps outputing the information in the algorithm; 
+PRECASTObj1 <- AddParSettingFAST(PRECASTObj1, verbose=TRUE)
+## Check the parameters
+PRECASTObj1@parameterList
+
+```
+
+```{r}
+q = 256
+fit.model = "gaussian"
+para_names <- c("maxIter", "epsLogLik", "verbose", "error_heter", "Psi_diag", "seed")
+fit.model <- match.arg(fit.model,'gaussian')
+verbose <- PRECASTObj@parameterList$verbose
+message("******", "Run the Gaussian version of FAST...")
+
+get_data <- function(seu_obj, assay = NULL, fit.model = "gaussian") {
+  if (is.null(assay)) 
+    assay <- DefaultAssay(seu_obj)
+  
+  if (fit.model == "poisson") {
+    dat <- GetAssayData(seu_obj, assay = assay, layer = "counts")
+  } else if (fit.model == "gaussian") {
+    dat <- GetAssayData(seu_obj, assay = assay, layer = "data")
+  } else {
+    stop("FAST: Check the argument: fit.model! It is not supported for this fit.model!")
+  }
+  
+  return(Matrix::t(as.matrix(dat)))  # 转置并确保是矩阵格式
+}
+XList1 <- lapply(PRECASTObj1@seulist, get_data, fit.model = fit.model)#报错
+
+PRECASTObj1@resList$FAST <- FAST_structure(XList1, q = 256, fit.model = fit.model, AdjList = PRECASTObj1@AdjList, parameterList = PRECASTObj1@parameterList)
+
+```
+
+
+```{r}
+embedding1=t(PRECASTObj1@resList[["FAST"]][["hV"]][[1]])
+embedding2=t(PRECASTObj1@resList[["FAST"]][["hV"]][[2]])
+
+```
+
+```{r}
+spatial1=matrix(c(PRECASTObj1@seulist[[1]]@meta.data[["row"]],PRECASTObj1@seulist[[1]]@meta.data[["col"]]),ncol=2)
+spatial2=matrix(c(PRECASTObj1@seulist[[2]]@meta.data[["row"]],PRECASTObj1@seulist[[2]]@meta.data[["col"]]),ncol=2)
+
+```
+
+```{r}
+write.csv(embedding1,'embedding1.csv',row.names=F)
+write.csv(embedding2,'embedding2.csv',row.names=F)
+```
+
+```{r}
+end_time <- proc.time()
+run_time <- end_time - start_time
+
+print(run_time)
+```
