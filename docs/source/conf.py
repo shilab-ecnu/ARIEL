@@ -1,35 +1,67 @@
 # Configuration file for the Sphinx documentation builder.
+import os
+import sys
 
-# -- Project information
+# -- Path setup --------------------------------------------------------------
+# 如果你的 ariel_srt 包在 src 目录下，可以添加路径（可选）
+# sys.path.insert(0, os.path.abspath('../../src'))
 
-project = 'Lumache'
-copyright = '2021, Graziella'
-author = 'Graziella'
+# -- Project information -----------------------------------------------------
+project = 'ARIEL'
+copyright = '2025, Yang Wanshuo, Yin Jun'
+author = 'Yang Wanshuo, Yin Jun'
 
-release = '0.1'
-version = '0.1.0'
+# The full version, including alpha/beta/rc tags
+release = '0.1.0'
 
-# -- General configuration
 
+# -- General configuration ---------------------------------------------------
+# 只保留 myst-nb，它已包含对 .md 和 .ipynb 的支持
 extensions = [
-    'sphinx.ext.duration',
-    'sphinx.ext.doctest',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',
-    'sphinx.ext.intersphinx',
+    'myst_nb',               # 核心：支持 Markdown 和 Jupyter Notebook
+    'sphinx_rtd_theme',      # 使用 Read the Docs 主题
 ]
 
-intersphinx_mapping = {
-    'python': ('https://docs.python.org/3/', None),
-    'sphinx': ('https://www.sphinx-doc.org/en/master/', None),
+# 设置主页面
+master_doc = 'index'
+
+# 支持的文件后缀
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+    '.ipynb': 'myst-nb',
 }
-intersphinx_disabled_domains = ['std']
 
-templates_path = ['_templates']
+# 语言
+language = 'en'
 
-# -- Options for HTML output
+# 不要尝试执行 notebook（关键！避免内核错误和加速构建）
+nb_execution_mode = "off"
 
+# 可选：如果你希望缓存执行结果（开发时）
+# nb_execution_cache_path = './_build/.jupyter_cache'
+
+# 忽略某些文件
+exclude_patterns = [
+    '_build',
+    'Thumbs.db',
+    '.DS_Store',
+    '**.ipynb_checkpoints'
+]
+
+
+# -- Options for HTML output -------------------------------------------------
 html_theme = 'sphinx_rtd_theme'
 
-# -- Options for EPUB output
-epub_show_urls = 'footnote'
+# HTML 输出选项
+html_static_path = ['_static']
+
+# 在侧边栏显示当前页的章节
+html_theme_options = {
+    'navigation_depth': 4,
+    'collapse_navigation': False,
+    'sticky_navigation': True,
+}
+
+# -- Internationalization ----------------------------------------------------
+gettext_compact = False
