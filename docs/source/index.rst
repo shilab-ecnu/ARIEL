@@ -1,4 +1,4 @@
-ARIEL: Spatiotemporal Modeling with SRT
+Welcome to ARIEL’s documentation!
 =======================================
 
 Welcome to the documentation for the ARIEL project.
@@ -11,6 +11,7 @@ Welcome to the documentation for the ARIEL project.
    DLPFC(Alignment).ipynb
    hepatic_lobular.ipynb
    hippocampus.ipynb
+
 
 
 End
