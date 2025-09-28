@@ -9,7 +9,7 @@ Welcome to the documentation for the ARIEL project.
 
    brain.ipynb
    DLPFC(Alignment).ipynb
-   hepatic_lobular.ipynb
+   hepatic_lobule.ipynb
    hippocampus.ipynb
 
 
