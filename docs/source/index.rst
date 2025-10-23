@@ -12,10 +12,12 @@ We develop a fast, omics-driven sample integration tool called ARIEL, which enab
    :caption: Contents:
 
    readme.ipynb
-   brain.ipynb
+
    DLPFC(Alignment).ipynb
-   hepatic lobule.ipynb
    hippocampus.ipynb
+   brain.ipynb
+   hepatic lobule.ipynb
+
 
 
 
