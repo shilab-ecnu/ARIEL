@@ -1,13 +1,13 @@
-# ARIEL: full Title
+# ARIEL: Automated landmark discovery method for integration of spatial omics data
 
 ## Introduction
-We develop a fast, omics-driven sample integration tool called ARIEL, which enables effortless landmark detection, spatial alignment and information transfer for multi-sample spatial transcriptomic data. ARIEL can be applied in diverse situation, including cross-individual, cross-platform, cross-resolution, cross-omics, and cross-disease scenarios. The main program of ARIEL can be summarized in the figure:
+We develop a fast, omics-driven sample integration tool called __ARIEL__, which enables effortless landmark detection, spatial alignment and information transfer for multi-sample spatial transcriptomic data. ARIEL can be applied in diverse situation, including cross-individual, cross-platform, cross-resolution, cross-omics, and cross-disease scenarios. The main program of ARIEL can be summarized in the figure:
 
 ![Outline](/docs/source/_static/ARIEL_hippo12.png)
 
 ## Installation
-We developed the ARIEL package based on Python 3.9.
-ARIEL now is available on PyPI. To install it, run this command in the terminal:
+We developed the __ARIEL-SRT__ package based on Python 3.9.
+ARIEL-SRT now is available on PyPI. To install it, run this command in the terminal:
 
 `pip install ariel-srt`
 
