@@ -23,7 +23,7 @@ source_suffix = {
 language = 'en'
 
 # Do not run notebook
-# nb_execution_mode = "off"
+nb_execution_mode = "off"
 
 exclude_patterns = [
     '_build',
